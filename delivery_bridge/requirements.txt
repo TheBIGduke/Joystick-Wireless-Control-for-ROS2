@@ -1,0 +1,25 @@
+# for fastapi server
+fastapi[all]==0.105.0
+uvicorn==0.23.1
+Unipath==1.1
+fastapi-login==1.9.1
+SQLModel-CRUD-manager==0.1.12
+fastapi-mail==1.4.1
+psycopg2-binary
+pytz
+
+# for socketio
+python-socketio==5.7.2
+websockets==10.4
+asgiref==3.7.2
+
+# for documentation
+sphinx==7.2.6
+sphinx-design==0.5.0
+sphinxcontrib-openapi==0.8.4 # for openapi documentation
+
+# for code quality
+pre-commit
+flake8
+black
+enum-tools[sphinx]==0.11.0

@@ -1,0 +1,3 @@
+[console_scripts]
+server_node = delivery_bridge.server_node:main
+
