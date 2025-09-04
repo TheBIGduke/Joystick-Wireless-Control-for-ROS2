@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../../colcon_ws/src/delivery_bridge"
+		},
+		{
+			"path": ".."
+		}
+	],
+	"settings": {}
+}

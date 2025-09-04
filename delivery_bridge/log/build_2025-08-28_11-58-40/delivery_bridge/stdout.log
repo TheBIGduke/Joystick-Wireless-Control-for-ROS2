@@ -1,0 +1,22 @@
+running develop
+running egg_info
+creating delivery_bridge.egg-info
+writing delivery_bridge.egg-info/PKG-INFO
+writing dependency_links to delivery_bridge.egg-info/dependency_links.txt
+writing entry points to delivery_bridge.egg-info/entry_points.txt
+writing requirements to delivery_bridge.egg-info/requires.txt
+writing top-level names to delivery_bridge.egg-info/top_level.txt
+writing manifest file 'delivery_bridge.egg-info/SOURCES.txt'
+reading manifest file 'delivery_bridge.egg-info/SOURCES.txt'
+writing manifest file 'delivery_bridge.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/lib/python3.10/site-packages/delivery-bridge.egg-link (link to .)
+Installing server_node script to /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/lib/delivery_bridge
+
+Installed /home/thebigduke/colcon_ws/src/delivery_bridge/build/delivery_bridge
+running symlink_data
+creating /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/share/ament_index
+creating /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/share/ament_index/resource_index
+creating /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/share/ament_index/resource_index/packages
+symbolically linking /home/thebigduke/colcon_ws/src/delivery_bridge/build/delivery_bridge/resource/delivery_bridge -> /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/share/ament_index/resource_index/packages
+symbolically linking /home/thebigduke/colcon_ws/src/delivery_bridge/build/delivery_bridge/package.xml -> /home/thebigduke/colcon_ws/src/delivery_bridge/install/delivery_bridge/share/delivery_bridge

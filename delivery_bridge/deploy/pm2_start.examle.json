@@ -1,0 +1,11 @@
+{
+  "apps": [
+    {
+      "name": "delivery_bridge",
+      "cwd": "/home/octopy/colcon_ws/src/delivery_bridge/deploy/",
+      "script": "./delivery_bridge.sh",
+      "exec_mode": "fork",
+      "run_as_user": "octopy"
+    }
+  ]
+}
