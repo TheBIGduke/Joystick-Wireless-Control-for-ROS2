@@ -36,6 +36,9 @@ const int socketio_port = 9009;
 #define VRX_PIN  39 // ESP32 pin GPIO39 (ADC3) connected to VRX pin
 #define VRY_PIN  36 // ESP32 pin GPIO36 (ADC0) connected to VRY pin
 
+// Dead man switch button
+#define DEADMAN_BUTTON_PIN 4 // ESP32 pin GPIO4 connected to pushbutton
+
 // Joystick calibration values - will be automatically calibrated on startup
 int CENTER_X_CALIBRATED = 2048; // Default center, will be updated during calibration
 int CENTER_Y_CALIBRATED = 2048; // Default center, will be updated during calibration
@@ -67,7 +70,11 @@ int valueY = 0; // to store the Y-axis value
 unsigned long lastCmdVel = 0;
 const unsigned long CMD_VEL_INTERVAL = 100; // Interval to send cmd_vel commands
 
-// Joystick calibration functionc
+// Dead man switch variables
+bool deadmanPressed = false;
+bool lastDeadmanState = false;
+
+// Joystick calibration function
 void calibrateJoystick() {
   Serial.println("=== JOYSTICK CALIBRATION ===");
   Serial.println("Please center your joystick and keep it still...");
@@ -219,20 +226,41 @@ float calculateAngularSpeed(int joystickValue) {
   }
 }
 
+bool readDeadmanSwitch() {
+  return digitalRead(DEADMAN_BUTTON_PIN) == HIGH; // Button pressed when LOW (pull-up resistor)
+}
+
 void processJoystickInput() {
+  // Read dead man switch state
+  deadmanPressed = readDeadmanSwitch();
+  
+  // Provide feedback when button state changes
+  if (deadmanPressed != lastDeadmanState) {
+    if (deadmanPressed) {
+      Serial.println("*** DEAD MAN SWITCH: ACTIVE - Robot control ENABLED ***");
+    } else {
+      Serial.println("*** DEAD MAN SWITCH: RELEASED - Robot control DISABLED ***");
+    }
+    lastDeadmanState = deadmanPressed;
+  }
+  
   float linear_x = 0.0;
   float angular_z = 0.0;
   
-  // Calculate speeds based on joystick positions
-  // Forward/Backward control (Y-axis)
-  if (valueY != 0) {
-    linear_x = calculateLinearSpeed(valueY);
+  // Only process joystick input if dead man switch is pressed
+  if (deadmanPressed) {
+    // Calculate speeds based on joystick positions
+    // Forward/Backward control (Y-axis)
+    if (valueY != 0) {
+      linear_x = calculateLinearSpeed(valueY);
+    }
+    
+    // Left/Right rotation control (X-axis)
+    if (valueX != 0) {
+      angular_z = -calculateAngularSpeed(valueX); // Negative for correct rotation direction
+    }
   }
-  
-  // Left/Right rotation control (X-axis)
-  if (valueX != 0) {
-    angular_z = -calculateAngularSpeed(valueX); // Negative for correct rotation direction
-  }
+  // If dead man switch is not pressed, linear_x and angular_z remain 0.0
   
   sendCmdVel(linear_x, angular_z);
 }
@@ -243,6 +271,10 @@ void setup() {
 
   // Set the ADC attenuation to 11 dB (up to ~3.3V input)
   analogSetAttenuation(ADC_11db);
+  
+  // Configure dead man switch button
+  pinMode(DEADMAN_BUTTON_PIN, INPUT_PULLUP);
+  Serial.println("Dead man switch configured on GPIO4 (active HIGH)");
   
   delay(2000); // Give time to open Serial Monitor
   
@@ -273,8 +305,11 @@ void setup() {
   Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + ", Full speed for |value| > " + String(SPEED_THRESHOLD));
   Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
   Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
+  Serial.println("\n=== SAFETY FEATURES ===");
+  Serial.println("- Dead man switch: GPIO4 button must be pressed for robot control");
+  Serial.println("- Robot will STOP immediately when button is released");
   Serial.println("\nNow testing with live joystick movement...");
-  Serial.println("Move your joystick around to test the calibration:");
+  Serial.println("HOLD THE DEAD MAN SWITCH and move your joystick around:");
 }
 
 void loop() {
