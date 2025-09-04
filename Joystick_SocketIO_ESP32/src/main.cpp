@@ -36,9 +36,9 @@ const int socketio_port = 9009;
 #define VRX_PIN  39 // ESP32 pin GPIO39 (ADC3) connected to VRX pin
 #define VRY_PIN  36 // ESP32 pin GPIO36 (ADC0) connected to VRY pin
 
-// Joystick calibration values
-#define CENTER_X 1945
-#define CENTER_Y 2005
+// Joystick calibration values - will be automatically calibrated on startup
+int CENTER_X_CALIBRATED = 2048; // Default center, will be updated during calibration
+int CENTER_Y_CALIBRATED = 2048; // Default center, will be updated during calibration
 #define MAX_X    4095
 #define MAX_Y    4095
 
@@ -66,6 +66,58 @@ int valueX = 0; // to store the X-axis value
 int valueY = 0; // to store the Y-axis value
 unsigned long lastCmdVel = 0;
 const unsigned long CMD_VEL_INTERVAL = 100; // Interval to send cmd_vel commands
+
+// Joystick calibration functionc
+void calibrateJoystick() {
+  Serial.println("=== JOYSTICK CALIBRATION ===");
+  Serial.println("Please center your joystick and keep it still...");
+  Serial.println("Calibrating in 5 seconds...");
+  
+  // Countdown
+  for(int i = 5; i > 0; i--) {
+    Serial.println(String(i) + "...");
+    delay(1000);
+  }
+  
+  Serial.println("Calibrating... DO NOT MOVE THE JOYSTICK!");
+  
+  // Take many readings and average them for better accuracy
+  long sumX = 0, sumY = 0;
+  int samples = 1000;
+  
+  for(int i = 0; i < samples; i++) {
+    sumX += analogRead(VRY_PIN);
+    sumY += analogRead(VRX_PIN);
+    delay(20);
+    if(i % 10 == 0) Serial.print(".");
+  }
+  Serial.println();
+  
+  CENTER_X_CALIBRATED = sumX / samples;
+  CENTER_Y_CALIBRATED = sumY / samples;
+  
+  Serial.println("Calibration complete!");
+  Serial.println("CENTER_X: " + String(CENTER_X_CALIBRATED));
+  Serial.println("CENTER_Y: " + String(CENTER_Y_CALIBRATED));
+  
+  // Test the calibration
+  Serial.println("\nTesting calibration (keep joystick centered):");
+  for(int i = 0; i < 10; i++) {
+    int testX = analogRead(VRY_PIN);
+    int testY = analogRead(VRX_PIN);
+    int mappedX = (testX - CENTER_X_CALIBRATED) * 1000 / MAX_X;
+    int mappedY = (testY - CENTER_Y_CALIBRATED) * 1000 / MAX_Y;
+    Serial.println("Raw(" + String(testX) + "," + String(testY) + ") -> Mapped(" + String(mappedX) + "," + String(mappedY) + ")");
+    delay(200);
+  }
+  
+  Serial.println("\n=== CALIBRATION VALUES ===");
+  Serial.println("CENTER_X: " + String(CENTER_X_CALIBRATED));
+  Serial.println("CENTER_Y: " + String(CENTER_Y_CALIBRATED));
+  Serial.println("============================\n");
+  
+  delay(2000);
+}
 
 // Socket.IO event handler
 void socketIOEvent(socketIOmessageType_t type, uint8_t * payload, size_t length) {
@@ -119,11 +171,12 @@ void readJoystick() {
   valueY = analogRead(VRX_PIN);
 
   // Map so center is 0, left/up is -100 and right/down is +100
-  valueX = (valueX - CENTER_X) * 1000 / MAX_X;
-  valueY = (valueY - CENTER_Y) * 1000 / MAX_Y;
+  // Use calibrated center values
+  valueX = (valueX - CENTER_X_CALIBRATED) * 1000 / MAX_X;
+  valueY = (valueY - CENTER_Y_CALIBRATED) * 1000 / MAX_Y;
 
   // Apply custom deadzone
-  const int deadzone = 4; // Adjust as needed
+  const int deadzone = 10; // Adjust as needed
   if (abs(valueX) < deadzone) valueX = 0;
   if (abs(valueY) < deadzone) valueY = 0;
 
@@ -190,6 +243,11 @@ void setup() {
 
   // Set the ADC attenuation to 11 dB (up to ~3.3V input)
   analogSetAttenuation(ADC_11db);
+  
+  delay(2000); // Give time to open Serial Monitor
+  
+  // Run automatic joystick calibration
+  calibrateJoystick();
  
   // Connect to WiFi network
   WiFi.begin(ssid, password);
@@ -215,6 +273,8 @@ void setup() {
   Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + ", Full speed for |value| > " + String(SPEED_THRESHOLD));
   Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
   Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
+  Serial.println("\nNow testing with live joystick movement...");
+  Serial.println("Move your joystick around to test the calibration:");
 }
 
 void loop() {
