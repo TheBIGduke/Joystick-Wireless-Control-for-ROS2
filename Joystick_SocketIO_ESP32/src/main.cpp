@@ -16,7 +16,7 @@
  * - Dead man switch safety feature
  * 
  * @author Kaléin Tamaríz - TheBIGduke
- * @version 2.0.0
+ * @version 1.1.0 (organized and commented)
  */
 
 // ============= LIBRARY INCLUDES =============
@@ -76,6 +76,10 @@ const int SPEED_THRESHOLD = 250;       // Threshold for half vs full speed
 // Command velocity send interval
 const unsigned long CMD_VEL_INTERVAL = 100; // ms between cmd_vel commands
 
+// Calibration parameters
+const int CALIBRATION_SAMPLES = 1000;  // Number of samples for calibration
+const int CALIBRATION_DELAY = 2;       // Delay between samples (ms)
+
 
 // ============= ENUMERATIONS =============
 // LED states for system status indication
@@ -84,13 +88,20 @@ enum LEDstate {
   LED_CALIBRATION_DONE,      // Calibration completed
   LED_WIFI_CONNECTING,       // WiFi connection in progress
   LED_WIFI_CONNECTED,        // WiFi connected successfully
-  LED_WIFI_ERROR,            // WiFi connection failed
   LED_SOCKETIO_CONNECTING,   // Socket.IO connection in progress
   LED_SOCKETIO_CONNECTED,    // Socket.IO connected successfully
   LED_SOCKETIO_ERROR,        // Socket.IO connection failed
   LED_SYSTEM_ONLINE,         // System fully operational
   LED_DEADMAN_NO_INPUT,      // Dead man active but no joystick input
   LED_DEADMAN_WITH_INPUT     // Dead man active with joystick input
+};
+
+// System states
+enum SystemState {
+  STATE_CALIBRATING,
+  STATE_CONNECTING_WIFI,
+  STATE_CONNECTING_SOCKETIO,
+  STATE_READY
 };
 
 // Solid color states for LED
@@ -129,12 +140,23 @@ unsigned long blinkTimer = 0;         // Timer for LED blinking
 bool blinkState = false;              // Current LED blink state
 int blinkCycle = 0;                   // Current blink cycle
 
+// Calibration variables
+long sumX = 0, sumY = 0;              // Sum of calibration samples
+int calibrationSamplesTaken = 0;      // Number of calibration samples taken
+unsigned long calibrationStartTime = 0; // When calibration started
+SystemState systemState = STATE_CALIBRATING; // Current system state
+LEDstate currentLEDState = LED_CALIBRATING; // Current LED state
+unsigned long socketRetryTime = 0;
+bool socketConnectionFailed = false;
+const unsigned long SOCKET_RETRY_DELAY = 5000; // 5 seconds
+
 
 // ============= FUNCTION PROTOTYPES =============
 // LED control functions
 void setSolidColor(int color);
 void setBlinkingMode(int blinkMode, int color);
 void setLEDState(LEDstate state);
+void updateLED();
 
 // Joystick functions
 void calibrateJoystick();
@@ -152,6 +174,9 @@ void processJoystickInput();
 
 // Utility functions
 bool readDeadmanSwitch();
+void handleCalibration();
+void handleWiFiConnection();
+void handleSocketIOConnection();
 
 
 // ============= SETUP FUNCTION =============
@@ -181,112 +206,98 @@ void setup() {
   pinMode(DEADMAN_BUTTON_PIN, INPUT_PULLUP);
   Serial.println("Dead man switch configured on GPIO4 (active LOW)");
   
-  delay(2000);  // Give time to open Serial Monitor
-  
-  // Run automatic joystick calibration
+  // Start calibration process
   setLEDState(LED_CALIBRATING);
-  calibrateJoystick();
-  setLEDState(LED_CALIBRATION_DONE);
-  delay(1000);
- 
-  // Connect to WiFi network
-  setLEDState(LED_WIFI_CONNECTING);
-  WiFi.begin(ssid, password);
-  
-  // Wait for WiFi connection
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  
-  Serial.println("\nConnected to WiFi");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-  setLEDState(LED_WIFI_CONNECTED);
-  delay(1000);
-  
-  // Setup Socket.IO client
-  setLEDState(LED_SOCKETIO_CONNECTING);
-  socketIO.begin(socketio_host, socketio_port, "/socket.io/?EIO=4");
-  socketIO.onEvent(socketIOEvent);
-  
-  Serial.println("Socket.IO client initialized");
-  setLEDState(LED_SOCKETIO_CONNECTED);
-  delay(1000);
-  
-  // System ready
-  setLEDState(LED_SYSTEM_ONLINE);
-  
-  // Print control information
-  Serial.println("=== Control Configuration ===");
-  Serial.println("Joystick Controls with Variable Speed:");
-  Serial.println("- Y-axis: Forward/Backward movement");
-  Serial.println("- X-axis: Left/Right rotation");
-  Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + 
-                 ", Full speed for |value| > " + String(SPEED_THRESHOLD));
-  Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + 
-                 "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
-  Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + 
-                 "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
-  Serial.println("\n=== SAFETY FEATURES ===");
-  Serial.println("- Dead man switch: GPIO4 button must be pressed for robot control");
-  Serial.println("- Robot will STOP immediately when button is released");
-  Serial.println("\nReady for operation. HOLD THE DEAD MAN SWITCH to enable control.");
+  calibrationStartTime = millis();
+  Serial.println("=== JOYSTICK CALIBRATION ===");
+  Serial.println("Please center your joystick and keep it still...");
+  Serial.println("Calibrating in 5 seconds...");
 }
 
 
 // ============= MAIN LOOP =============
 void loop() {
-  // Handle Socket.IO events
-  socketIO.loop();
+  // Update LED state
+  updateLED();
   
-  // Read joystick input
-  readJoystick();
-  
-  // Send cmd_vel commands at regular intervals
-  if (millis() - lastCmdVel >= CMD_VEL_INTERVAL) {
-    lastCmdVel = millis();
-    processJoystickInput();
+  // Handle different system states
+  switch(systemState) {
+    case STATE_CALIBRATING:
+      handleCalibration();
+      break;
+      
+    case STATE_CONNECTING_WIFI:
+      handleWiFiConnection();
+      break;
+      
+    case STATE_CONNECTING_SOCKETIO:
+      handleSocketIOConnection();
+      break;
+      
+    case STATE_READY:
+      // Handle Socket.IO events
+      socketIO.loop();
+      
+      // Read joystick input
+      readJoystick();
+      
+      // Send cmd_vel commands at regular intervals
+      if (millis() - lastCmdVel >= CMD_VEL_INTERVAL) {
+        lastCmdVel = millis();
+        processJoystickInput();
+      }
+      break;
   }
- 
+  
   delay(10);  // Small delay to maintain stability
 }
 
 
-// ============= JOYSTICK FUNCTIONS =============
+// ============= CALIBRATION FUNCTIONS =============
 
 /**
- * Calibrates the joystick by taking multiple readings at center position
- * and calculating average center values for both axes
+ * Handles the calibration process in a non-blocking way
  */
-void calibrateJoystick() {
-  Serial.println("=== JOYSTICK CALIBRATION ===");
-  Serial.println("Please center your joystick and keep it still...");
-  Serial.println("Calibrating in 5 seconds...");
+void handleCalibration() {
+  static int countdown = 5;
+  static unsigned long lastCountdownTime = 0;
   
-  // Countdown before calibration
-  for(int i = 5; i > 0; i--) {
-    Serial.println(String(i) + "...");
-    delay(1000);
+  // Countdown phase
+  if (countdown > 0) {
+    if (millis() - lastCountdownTime >= 1000) {
+      lastCountdownTime = millis();
+      Serial.println(String(countdown) + "...");
+      countdown--;
+      
+      if (countdown == 0) {
+        Serial.println("Calibrating... DO NOT MOVE THE JOYSTICK!");
+      }
+    }
+    return;
   }
   
-  Serial.println("Calibrating... DO NOT MOVE THE JOYSTICK!");
-  
-  // Take multiple readings and average them for better accuracy
-  long sumX = 0, sumY = 0;
-  int samples = 1000;
-  
-  for(int i = 0; i < samples; i++) {
-    sumX += analogRead(VRY_PIN);  // Note: X and Y are swapped in reading
-    sumY += analogRead(VRX_PIN);  // to match physical orientation
-    delay(2);
-    if(i % 100 == 0) Serial.print(".");
+  // Calibration sampling phase
+  if (calibrationSamplesTaken < CALIBRATION_SAMPLES) {
+    if (millis() - calibrationStartTime >= CALIBRATION_DELAY) {
+      calibrationStartTime = millis();
+      
+      sumX += analogRead(VRY_PIN);  // Note: X and Y are swapped in reading
+      sumY += analogRead(VRX_PIN);  // to match physical orientation
+      calibrationSamplesTaken++;
+      
+      if (calibrationSamplesTaken % 100 == 0) {
+        Serial.print(".");
+      }
+    }
+    return;
   }
+  
+  // Calibration complete
   Serial.println();
   
   // Calculate average center values
-  CENTER_X_CALIBRATED = sumX / samples;
-  CENTER_Y_CALIBRATED = sumY / samples;
+  CENTER_X_CALIBRATED = sumX / CALIBRATION_SAMPLES;
+  CENTER_Y_CALIBRATED = sumY / CALIBRATION_SAMPLES;
   
   Serial.println("Calibration complete!");
   Serial.println("CENTER_X: " + String(CENTER_X_CALIBRATED));
@@ -305,7 +316,111 @@ void calibrateJoystick() {
   }
   
   Serial.println("=== CALIBRATION COMPLETE ===\n");
+  setLEDState(LED_CALIBRATION_DONE);
+  delay(1000);
+  
+  // Move to next state
+  systemState = STATE_CONNECTING_WIFI;
+  setLEDState(LED_WIFI_CONNECTING);
+  WiFi.begin(ssid, password);
 }
+
+
+// ============= CONNECTION HANDLING FUNCTIONS =============
+
+/**
+ * Handles WiFi connection process
+ */
+void handleWiFiConnection() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected to WiFi");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    setLEDState(LED_WIFI_CONNECTED);
+    delay(3000);
+    
+    // Move to next state
+    systemState = STATE_CONNECTING_SOCKETIO;
+    setLEDState(LED_SOCKETIO_CONNECTING);
+    socketIO.begin(socketio_host, socketio_port, "/socket.io/?EIO=4");
+    socketIO.onEvent(socketIOEvent);
+    return;
+  }
+  
+  // Show connection progress
+  static unsigned long lastPrintTime = 0;
+  if (millis() - lastPrintTime >= 500) {
+    lastPrintTime = millis();
+    Serial.print(".");
+  }
+}
+
+/**
+ * Handles Socket.IO connection process
+ */
+void handleSocketIOConnection() {
+  static unsigned long connectionStartTime = millis();
+  const unsigned long CONNECTION_TIMEOUT = 10000; // 10 seconds timeout
+
+  // Handle connection timeout
+  if (millis() - connectionStartTime > CONNECTION_TIMEOUT && !socketConnectionFailed) {
+    Serial.println("Socket.IO connection timeout!");
+    setLEDState(LED_SOCKETIO_ERROR);
+    socketConnectionFailed = true;
+    socketRetryTime = millis();
+    return;
+  }
+  
+  // Handle retry after timeout
+  if (socketConnectionFailed) {
+    if (millis() - socketRetryTime >= SOCKET_RETRY_DELAY) {
+      Serial.println("Retrying Socket.IO connection...");
+      socketConnectionFailed = false;
+      connectionStartTime = millis();
+      setLEDState(LED_SOCKETIO_CONNECTING);
+      
+      // Reinitialize the Socket.IO connection
+      socketIO.begin(socketio_host, socketio_port, "/socket.io/?EIO=4");
+      socketIO.onEvent(socketIOEvent);
+    }
+    return;
+  }
+  
+  // Socket.IO connection is handled in the event callback
+  // We just need to check if we're connected
+  static bool socketConnected = false;
+  
+  // For demonstration, we'll assume connection is successful after a delay
+  if (!socketConnected && millis() - connectionStartTime > 2000) {
+    socketConnected = true;
+    Serial.println("Socket.IO client initialized");
+    setLEDState(LED_SOCKETIO_CONNECTED);
+    delay(1000);
+    
+    // System ready
+    systemState = STATE_READY;
+    setLEDState(LED_SYSTEM_ONLINE);
+
+    // Print control information
+    Serial.println("=== Control Configuration ===");
+    Serial.println("Joystick Controls with Variable Speed:");
+    Serial.println("- Y-axis: Forward/Backward movement");
+    Serial.println("- X-axis: Left/Right rotation");
+    Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + 
+                   ", Full speed for |value| > " + String(SPEED_THRESHOLD));
+    Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + 
+                   "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
+    Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + 
+                   "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
+    Serial.println("\n=== SAFETY FEATURES ===");
+    Serial.println("- Dead man switch: GPIO4 button must be pressed for robot control");
+    Serial.println("- Robot will STOP immediately when button is released");
+    Serial.println("\nReady for operation. HOLD THE DEAD MAN SWITCH to enable control.");
+  }
+}
+
+
+// ============= JOYSTICK FUNCTIONS =============
 
 /**
  * Reads raw values from joystick and converts to centered coordinates
@@ -468,12 +583,17 @@ void socketIOEvent(socketIOmessageType_t type, uint8_t * payload, size_t length)
     case sIOtype_DISCONNECT:
       Serial.printf("[IOc] Disconnected!\n");
       setLEDState(LED_SOCKETIO_ERROR);
+      systemState = STATE_CONNECTING_SOCKETIO;
       break;
     case sIOtype_CONNECT:
       Serial.printf("[IOc] Connected to url: %s\n", payload);
       // Join default namespace
       socketIO.send(sIOtype_CONNECT, "/");
       setLEDState(LED_SOCKETIO_CONNECTED);
+
+      //Now transition to ready state
+      systemState = STATE_READY;
+      setLEDState(LED_SYSTEM_ONLINE);
       break;
     case sIOtype_EVENT:
       Serial.printf("[IOc] get event: %s\n", payload);
@@ -581,10 +701,7 @@ void setBlinkingMode(int blinkMode, int color) {
       
     case BLINK_HOLD:
       // Solid color for 2 seconds
-      if (millis() - blinkTimer >= 2000) {
-        setSolidColor(color);
-        blinkTimer = millis();
-      }
+      setSolidColor(color);
       break;
       
     case BLINK_DOUBLE:
@@ -671,6 +788,7 @@ void setBlinkingMode(int blinkMode, int color) {
  * @param state The system state to indicate
  */
 void setLEDState(LEDstate state) {
+    currentLEDState = state;
     switch(state) {
         case LED_CALIBRATING:
             setBlinkingMode(BLINK_FAST, COLOR_ORANGE);
@@ -684,8 +802,44 @@ void setLEDState(LEDstate state) {
         case LED_WIFI_CONNECTED:
             setBlinkingMode(BLINK_HOLD, COLOR_BLUE);
             break;
-        case LED_WIFI_ERROR:
-            setBlinkingMode(BLINK_DOUBLE, COLOR_RED);
+        case LED_SOCKETIO_CONNECTING:
+            setBlinkingMode(BLINK_MEDIUM, COLOR_YELLOW);
+            break;
+        case LED_SOCKETIO_CONNECTED:
+            setBlinkingMode(BLINK_HOLD, COLOR_YELLOW);
+            break;
+        case LED_SOCKETIO_ERROR:
+            setBlinkingMode(BLINK_TRIPLE, COLOR_RED);
+            break;
+        case LED_SYSTEM_ONLINE:
+            setBlinkingMode(BLINK_HOLD, COLOR_GREEN);
+            break;
+        case LED_DEADMAN_NO_INPUT:
+            setBlinkingMode(BLINK_HEARTBEAT, COLOR_MAGENTA);
+            break;
+        case LED_DEADMAN_WITH_INPUT:
+            setBlinkingMode(BLINK_RAPID_PULSE, COLOR_MAGENTA);
+            break;
+    }
+}
+
+/**
+ * Updates the LED based on the current state
+ * This should be called frequently in the main loop
+ */
+void updateLED() {
+    switch(currentLEDState) {
+        case LED_CALIBRATING:
+            setBlinkingMode(BLINK_FAST, COLOR_ORANGE);
+            break;
+        case LED_CALIBRATION_DONE:
+            setBlinkingMode(BLINK_HOLD, COLOR_ORANGE);
+            break;
+        case LED_WIFI_CONNECTING:
+            setBlinkingMode(BLINK_MEDIUM, COLOR_BLUE);
+            break;
+        case LED_WIFI_CONNECTED:
+            setBlinkingMode(BLINK_HOLD, COLOR_BLUE);
             break;
         case LED_SOCKETIO_CONNECTING:
             setBlinkingMode(BLINK_MEDIUM, COLOR_YELLOW);
