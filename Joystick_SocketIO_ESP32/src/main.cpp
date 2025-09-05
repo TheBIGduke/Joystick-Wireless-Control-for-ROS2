@@ -361,6 +361,18 @@ void handleWiFiConnection() {
 void handleSocketIOConnection() {
   static unsigned long connectionStartTime = millis();
   const unsigned long CONNECTION_TIMEOUT = 10000; // 10 seconds timeout
+  static bool socketInitialized = false;
+
+  // Initialize socket if not already done
+  if (!socketInitialized) {
+    Serial.println("Initializing Socket.IO connection...");
+    setLEDState(LED_SOCKETIO_CONNECTING);
+    socketIO.begin(socketio_host, socketio_port, "/socket.io/?EIO=4");
+    socketIO.onEvent(socketIOEvent);
+    socketInitialized = true;
+    connectionStartTime = millis();
+    return;
+  }
 
   // Handle connection timeout
   if (millis() - connectionStartTime > CONNECTION_TIMEOUT && !socketConnectionFailed) {
@@ -368,6 +380,7 @@ void handleSocketIOConnection() {
     setLEDState(LED_SOCKETIO_ERROR);
     socketConnectionFailed = true;
     socketRetryTime = millis();
+    socketInitialized = false; // Reset for next attempt
     return;
   }
   
@@ -376,47 +389,13 @@ void handleSocketIOConnection() {
     if (millis() - socketRetryTime >= SOCKET_RETRY_DELAY) {
       Serial.println("Retrying Socket.IO connection...");
       socketConnectionFailed = false;
-      connectionStartTime = millis();
-      setLEDState(LED_SOCKETIO_CONNECTING);
-      
-      // Reinitialize the Socket.IO connection
-      socketIO.begin(socketio_host, socketio_port, "/socket.io/?EIO=4");
-      socketIO.onEvent(socketIOEvent);
+      socketInitialized = false; // This will trigger re-initialization in the next loop
     }
     return;
   }
   
-  // Socket.IO connection is handled in the event callback
-  // We just need to check if we're connected
-  static bool socketConnected = false;
-  
-  // For demonstration, we'll assume connection is successful after a delay
-  if (!socketConnected && millis() - connectionStartTime > 2000) {
-    socketConnected = true;
-    Serial.println("Socket.IO client initialized");
-    setLEDState(LED_SOCKETIO_CONNECTED);
-    delay(1000);
-    
-    // System ready
-    systemState = STATE_READY;
-    setLEDState(LED_SYSTEM_ONLINE);
-
-    // Print control information
-    Serial.println("=== Control Configuration ===");
-    Serial.println("Joystick Controls with Variable Speed:");
-    Serial.println("- Y-axis: Forward/Backward movement");
-    Serial.println("- X-axis: Left/Right rotation");
-    Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + 
-                   ", Full speed for |value| > " + String(SPEED_THRESHOLD));
-    Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + 
-                   "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
-    Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + 
-                   "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
-    Serial.println("\n=== SAFETY FEATURES ===");
-    Serial.println("- Dead man switch: GPIO4 button must be pressed for robot control");
-    Serial.println("- Robot will STOP immediately when button is released");
-    Serial.println("\nReady for operation. HOLD THE DEAD MAN SWITCH to enable control.");
-  }
+  // Process socket events in the main loop
+  socketIO.loop();
 }
 
 
@@ -582,18 +561,35 @@ void socketIOEvent(socketIOmessageType_t type, uint8_t * payload, size_t length)
   switch(type) {
     case sIOtype_DISCONNECT:
       Serial.printf("[IOc] Disconnected!\n");
-      setLEDState(LED_SOCKETIO_ERROR);
-      systemState = STATE_CONNECTING_SOCKETIO;
+      if (systemState == STATE_READY) {
+        setLEDState(LED_SOCKETIO_ERROR);
+        systemState = STATE_CONNECTING_SOCKETIO;
+      }
       break;
     case sIOtype_CONNECT:
       Serial.printf("[IOc] Connected to url: %s\n", payload);
       // Join default namespace
       socketIO.send(sIOtype_CONNECT, "/");
-      setLEDState(LED_SOCKETIO_CONNECTED);
-
-      //Now transition to ready state
+      
+      // Transition to ready state and set system online LED
       systemState = STATE_READY;
       setLEDState(LED_SYSTEM_ONLINE);
+      
+      // Print control information
+      Serial.println("=== Control Configuration ===");
+      Serial.println("Joystick Controls with Variable Speed:");
+      Serial.println("- Y-axis: Forward/Backward movement");
+      Serial.println("- X-axis: Left/Right rotation");
+      Serial.println("- Speed: Half speed for |value| <= " + String(SPEED_THRESHOLD) + 
+                    ", Full speed for |value| > " + String(SPEED_THRESHOLD));
+      Serial.println("- Linear speeds: Half=" + String(LINEAR_SPEED_HALF) + 
+                    "m/s, Full=" + String(LINEAR_SPEED_FULL) + "m/s");
+      Serial.println("- Angular speeds: Half=" + String(ANGULAR_SPEED_HALF) + 
+                    "rad/s, Full=" + String(ANGULAR_SPEED_FULL) + "rad/s");
+      Serial.println("\n=== SAFETY FEATURES ===");
+      Serial.println("- Dead man switch: GPIO4 button must be pressed for robot control");
+      Serial.println("- Robot will STOP immediately when button is released");
+      Serial.println("\nReady for operation. HOLD THE DEAD MAN SWITCH to enable control.");
       break;
     case sIOtype_EVENT:
       Serial.printf("[IOc] get event: %s\n", payload);
