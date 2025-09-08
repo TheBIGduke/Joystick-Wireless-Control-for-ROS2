@@ -5,7 +5,7 @@
 [![ROS2](https://img.shields.io/badge/ROS2-Humble%2B-blue.svg)](https://docs.ros.org/en/humble/)
 [![Socket.IO](https://img.shields.io/badge/Socket.IO-4.0%2B-green.svg)](https://socket.io/)
 
-A wireless joystick controller implementation for ESP32 using PlatformIO that enables real-time robot control through Socket.IO communication with a ROS2 delivery bridge system. Control your robot wirelessly with an analog joystick connected to ESP32, featuring variable speed control and seamless ROS2 integration.
+A wireless joystick controller implementation for ESP32 using PlatformIO that enables real-time robot control through Socket.IO communication with a ROS2 delivery bridge system. Control your robot wirelessly with an analog joystick connected to ESP32, featuring variable speed control, RGB LED status indication, and seamless ROS2 integration.
 
 ## Features
 
@@ -20,6 +20,7 @@ A wireless joystick controller implementation for ESP32 using PlatformIO that en
 - **JSON-based Protocol** - Standardized message format
 - **Delivery Bridge Integration** - Seamless ROS2 robot communication
 - **No Authentication Required** - Direct API access for embedded devices
+- **RGB LED Status Indicator** - Visual feedback for system states and connection status
 - **Real-time Robot Data** - Battery status, position updates, system status
 
 ## Table of Contents
@@ -38,10 +39,13 @@ A wireless joystick controller implementation for ESP32 using PlatformIO that en
 ### Hardware
 - **ESP32 Development Board** (ESP32 DevKitC, NodeMCU-32S, or compatible)
 - **Analog Joystick Module** (2-axis with VRX/VRY outputs)
+- **Common Anode RGB LED** (or individual LEDs with current-limiting resistors)
 - **Jumper Wires** (male-to-female for connections)
 - **USB Cable** (micro-USB or USB-C depending on your board)
 - **Computer** with available USB port
 - **Robot** compatible with ROS2 cmd_vel commands (optional for testing)
+
+<img src="images/Joystick_bb.png" alt="ESP32 Setup" width="800">
 
 #### Joystick Wiring
 ```
@@ -50,6 +54,22 @@ VCC → 3.3V
 GND → GND
 VRX → GPIO39 (ADC3)
 VRY → GPIO36 (ADC0)
+```
+
+#### Pushbutton Wiring
+```
+Pushbutton (Dead Man Switch) → ESP32
+One side → GPIO4
+Other side → GND
+```
+
+#### RGB LED Wiring (Common Anode)
+```
+RGB LED → ESP32
+Red Cathode → GPIO25 (with 220Ω resistor)
+Common Anode → 3.3V
+Green Cathode → GPIO26 (with 220Ω resistor)
+Blue Cathode → GPIO27 (with 220Ω resistor)
 ```
 
 ### Software
@@ -149,9 +169,9 @@ pio --version
    ```
 
 5. **Verify the server:**
-   - Server listening on port 9009: ✅
-   - API documentation: `http://127.0.0.1:9009/docs` ✅
-   - Socket.IO ready for ESP32 connections ✅
+   - Server listening on port 9009: 
+   - API documentation: `http://127.0.0.1:9009/docs` 
+   - Socket.IO ready for ESP32 connections 
 
 ### Step 3: Setup ESP32 Project
 
@@ -308,7 +328,7 @@ INFO: connection open
 
 #### Using PlatformIO CLI:
 ```bash
-# Navigate to ESP32 project directory
+# Navigate to Joystick_SocketIO_ESP32 directory
 cd Joystick_SocketIO_ESP32
 
 # Build the project
@@ -478,40 +498,19 @@ Where:
 - **Full Speed**: When `|joystick_value| > SPEED_THRESHOLD` (extreme positions)
 - **Stopped**: When joystick is in center position (within deadzone)
 
-## PlatformIO Commands
+## RGB LED Status Reference
 
-### Development Commands
-```bash
-# Build project
-pio run
-
-# Build and upload
-pio run -t upload
-
-# Clean build files
-pio run -t clean
-
-# Monitor serial output
-pio device monitor
-
-# List connected devices
-pio device list
-
-# Update platforms and libraries
-pio update
-```
-
-### Library Management
-```bash
-# Install library
-pio lib install "library_name"
-
-# List installed libraries  
-pio lib list
-
-# Search for libraries
-pio lib search "socket.io"
-```
+| LED State | Color | Blink Pattern | Description |
+|-----------|-------|---------------|-------------|
+| Calibrating | Orange | Fast blink | Initial calibration in progress |
+| WiFi Connecting | Blue | Medium blink | Attempting to connect to WiFi |
+| WiFi Connected | Blue | Solid | Successfully connected to WiFi |
+| Socket.IO Connecting | Yellow | Fast blink | Connecting to Socket.IO server |
+| Socket.IO Connected | Yellow | Solid | Successfully connected to Socket.IO |
+| System Online | Green | Solid | System ready, waiting for input |
+| Dead Man (No Input) | Magenta | Slow pulse | Dead man switch active, no joystick input |
+| Dead Man (With Input) | Magenta | Rapid pulse | Dead man active with joystick input |
+| Error | Red | Triple blink | Connection error or system fault |
 
 ## Troubleshooting
 
@@ -613,8 +612,7 @@ This project builds upon the excellent work of the [delivery_bridge](https://git
 
 **ESP32 Joystick Controller Implementation:**
 - **Author:** Kaléin Tamaríz - TheBIGduke
-- **Implementation:** ESP32 joystick control integration with ROS2
-- **Version:** 3.0.0
+- **Version:** 2.0.0
 
 ---
 

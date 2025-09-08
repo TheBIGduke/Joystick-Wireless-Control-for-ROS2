@@ -16,7 +16,7 @@
  * - Dead man switch safety feature
  * 
  * @author Kaléin Tamaríz - TheBIGduke
- * @version 1.1.0 (organized and commented)
+ * @version 2.0.0
  */
 
 // ============= LIBRARY INCLUDES =============
@@ -128,32 +128,32 @@ enum SystemState {
 SocketIOclient socketIO;              // Socket.IO client instance
 
 // Joystick and control variables
-int valueX = 0;                       // Current X-axis value
-int valueY = 0;                       // Current Y-axis value
-unsigned long lastCmdVel = 0;         // Last time cmd_vel was sent
+int valueX = 0;                       // Current X-axis value (centered, mapped)
+int valueY = 0;                       // Current Y-axis value (centered, mapped)
+unsigned long lastCmdVel = 0;         // Last time cmd_vel was sent (for rate limiting)
 
 // Dead man switch variables
 bool deadmanPressed = false;          // Current dead man switch state
-bool lastDeadmanState = false;        // Previous dead man switch state
+bool lastDeadmanState = false;        // Previous dead man switch state (for edge detection)
 
 // LED indicator variables
-unsigned long blinkTimer = 0;         // Timer for LED blinking
-bool blinkState = false;              // Current LED blink state
-int blinkCycle = 0;                   // Current blink cycle
+unsigned long blinkTimer = 0;         // Timer for LED blinking patterns
+bool blinkState = false;              // Current LED blink state (on/off)
+int blinkCycle = 0;                   // Current blink cycle (for pattern arrays)
 
 // Error state handling
-unsigned long errorStartTime = 0;     // When the error state started
+unsigned long errorStartTime = 0;     // When the error state started (for error display timing)
 const unsigned long ERROR_DISPLAY_TIME = 3000; // 3 seconds to show error
 
 // Calibration variables
-long sumX = 0, sumY = 0;              // Sum of calibration samples
+long sumX = 0, sumY = 0;              // Sum of calibration samples (for averaging)
 int calibrationSamplesTaken = 0;      // Number of calibration samples taken
 unsigned long calibrationStartTime = 0; // When calibration started
 SystemState systemState = STATE_CALIBRATING; // Current system state
 LEDstate currentLEDState = LED_CALIBRATING; // Current LED state
-unsigned long socketRetryTime = 0;
-bool socketConnectionFailed = false;
-const unsigned long SOCKET_RETRY_DELAY = 5000; // 5 seconds
+unsigned long socketRetryTime = 0;    // Time when socket retry started
+bool socketConnectionFailed = false;  // Flag for socket connection failure
+const unsigned long SOCKET_RETRY_DELAY = 5000; // 5 seconds before retry
 
 
 // ============= FUNCTION PROTOTYPES =============
@@ -207,7 +207,7 @@ void setup() {
   // Configure ADC for joystick
   analogSetAttenuation(ADC_11db);  // Set ADC attenuation to 11 dB (up to ~3.3V input)
   
-  // Configure dead man switch button
+  // Configure dead man switch button (active LOW)
   pinMode(DEADMAN_BUTTON_PIN, INPUT_PULLUP);
   Serial.println("Dead man switch configured on GPIO4 (active LOW)");
   
@@ -222,7 +222,7 @@ void setup() {
 
 // ============= MAIN LOOP =============
 void loop() {
-  // Update LED state
+  // Update LED state (visual feedback)
   updateLED();
   
   // Handle different system states
@@ -235,24 +235,20 @@ void loop() {
       break;
       
     case STATE_CALIBRATING:
-      handleCalibration();
+      handleCalibration(); // Non-blocking calibration
       break;
       
     case STATE_CONNECTING_WIFI:
-      handleWiFiConnection();
+      handleWiFiConnection(); // Non-blocking WiFi connection
       break;
       
     case STATE_CONNECTING_SOCKETIO:
-      handleSocketIOConnection();
+      handleSocketIOConnection(); // Non-blocking Socket.IO connection
       break;
       
     case STATE_READY:
-      // Handle Socket.IO events
-      socketIO.loop();
-      
-      // Read joystick input
-      readJoystick();
-      
+      socketIO.loop(); // Handle Socket.IO events
+      readJoystick();  // Read joystick input
       // Send cmd_vel commands at regular intervals
       if (millis() - lastCmdVel >= CMD_VEL_INTERVAL) {
         lastCmdVel = millis();
@@ -271,7 +267,7 @@ void loop() {
  * Handles the calibration process in a non-blocking way
  */
 void handleCalibration() {
-  static int countdown = 5;
+  static int countdown = 5; // Countdown before calibration starts
   static unsigned long lastCountdownTime = 0;
   
   // Countdown phase
