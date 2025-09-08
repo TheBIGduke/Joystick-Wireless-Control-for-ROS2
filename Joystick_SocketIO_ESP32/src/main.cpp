@@ -101,7 +101,8 @@ enum SystemState {
   STATE_CALIBRATING,
   STATE_CONNECTING_WIFI,
   STATE_CONNECTING_SOCKETIO,
-  STATE_READY
+  STATE_READY,
+  STATE_ERROR_DISPLAY  // Added state for showing error before reconnecting
 };
 
 // Solid color states for LED
@@ -139,6 +140,10 @@ bool lastDeadmanState = false;        // Previous dead man switch state
 unsigned long blinkTimer = 0;         // Timer for LED blinking
 bool blinkState = false;              // Current LED blink state
 int blinkCycle = 0;                   // Current blink cycle
+
+// Error state handling
+unsigned long errorStartTime = 0;     // When the error state started
+const unsigned long ERROR_DISPLAY_TIME = 3000; // 3 seconds to show error
 
 // Calibration variables
 long sumX = 0, sumY = 0;              // Sum of calibration samples
@@ -222,6 +227,13 @@ void loop() {
   
   // Handle different system states
   switch(systemState) {
+    case STATE_ERROR_DISPLAY:
+      // Show error for 3 seconds before attempting to reconnect
+      if (millis() - errorStartTime >= ERROR_DISPLAY_TIME) {
+        systemState = STATE_CONNECTING_SOCKETIO;
+      }
+      break;
+      
     case STATE_CALIBRATING:
       handleCalibration();
       break;
@@ -378,9 +390,11 @@ void handleSocketIOConnection() {
   if (millis() - connectionStartTime > CONNECTION_TIMEOUT && !socketConnectionFailed) {
     Serial.println("Socket.IO connection timeout!");
     setLEDState(LED_SOCKETIO_ERROR);
+    errorStartTime = millis();  // Start the error display timer
     socketConnectionFailed = true;
     socketRetryTime = millis();
     socketInitialized = false; // Reset for next attempt
+    systemState = STATE_ERROR_DISPLAY;  // Transition to error display state
     return;
   }
   
@@ -563,7 +577,8 @@ void socketIOEvent(socketIOmessageType_t type, uint8_t * payload, size_t length)
       Serial.printf("[IOc] Disconnected!\n");
       if (systemState == STATE_READY) {
         setLEDState(LED_SOCKETIO_ERROR);
-        systemState = STATE_CONNECTING_SOCKETIO;
+        errorStartTime = millis();  // Start the error display timer
+        systemState = STATE_ERROR_DISPLAY;  // New state to show error before reconnecting
       }
       break;
     case sIOtype_CONNECT:
