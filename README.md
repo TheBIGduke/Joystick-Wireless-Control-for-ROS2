@@ -189,6 +189,20 @@ To get accurate center values:
 
 ## Usage
 
+### LED indicators (startup sequence)
+Follow the LED colors during startup — do not move the joystick while calibration is in progress.
+
+- 🟠 Orange (blinking) — Calibrating joystick. Do NOT move the joystick until the LED turns solid orange.
+- 🟠 Orange (solid)  — Calibration complete; startup continues.
+- 🔵 Blue (blinking) — Connecting to WiFi.
+- 🔵 Blue (solid)    — WiFi connected.
+- 🟡 Yellow (blinking) — Connecting to Socket.IO (delivery_bridge).
+- 🟡 Yellow (solid)    — Socket.IO connected.
+- 🟢 Green (solid)   — System ready. You may control the robot.
+
+To move the robot: press and hold the deadman switch while operating the joystick.
+To stop the robot: release the joystick to center OR (in emergencies) release the deadman switch immediately.
+
 ### 1. Start the Delivery Bridge
 
 ```bash
